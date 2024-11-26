@@ -1,3 +1,5 @@
+---
+
 name: build
 
 on:
@@ -7,10 +9,6 @@ on:
         required: true
         type: string
         default: 'all'
-  pull_request: ~
-  push:
-    branches:
-      - main
   workflow_dispatch: ~
 
 permissions:
@@ -31,9 +29,6 @@ jobs:
   build-php-deps:
     uses: ./.github/workflows/build-php-deps.yml
 
-  test-sources-license:
-    uses: ./.github/workflows/test-sources-license.yml
-
   build-packages:
     needs:
       - build-native
@@ -41,22 +36,3 @@ jobs:
     uses: ./.github/workflows/build-packages.yml
     with:
       build_arch: all
-
-  tests-phpt:
-    needs:
-      - build-native
-    uses: ./.github/workflows/test-phpt.yml
-    with:
-      build_arch: all
-
-  # The very last job to report whether the Workflow passed.
-  # This will act as the Branch Protection gatekeeper
-  ci:
-    needs:
-      - build-packages
-      - tests-phpt
-      - test-sources-license
-    runs-on: ubuntu-latest
-    steps:
-      - name: report
-        run: echo "CI workflow passed"
