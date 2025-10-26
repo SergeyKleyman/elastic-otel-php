@@ -23,25 +23,42 @@ declare(strict_types=1);
 
 namespace ElasticOTelTests\ComponentTests\Util;
 
-use ElasticOTelTests\ComponentTests\Util\OtlpData\Span;
-use ElasticOTelTests\ComponentTests\Util\OtlpData\SpanKind;
+use ElasticOTelTests\Util\Log\LoggableTrait;
+use ElasticOTelTests\Util\Log\LogStreamInterface;
+use ElasticOTelTests\Util\MonotonicTime;
+use ElasticOTelTests\Util\SystemTime;
 
-final class SpanExpectations implements ExpectationsInterface
+/**
+ * @phpstan-type HttpHeaders array<string, string[]>
+ */
+final class IntakeDataRequestRaw extends AgentBackendCommEvent
 {
-    use ExpectationsTrait;
+    use LoggableTrait;
 
     /**
-     * @phpstan-param LeafExpectations<SpanKind> $kind
+     * @param HttpHeaders $httpHeaders
      */
     public function __construct(
-        public readonly StringExpectations $name,
-        public readonly LeafExpectations $kind,
-        public readonly AttributesExpectations $attributes,
+        MonotonicTime $monotonicTime,
+        SystemTime $systemTime,
+        public readonly OTelSignalType $signalType,
+        public readonly array $httpHeaders,
+        public readonly string $body,
     ) {
+        parent::__construct($monotonicTime, $systemTime);
     }
 
-    public function assertMatches(Span $actual): void
+    /**
+     * @return string[]
+     */
+    protected static function propertiesExcludedFromLog(): array
     {
-        $this->assertMatchesMixed($actual);
+        return ['body'];
+    }
+
+    public function toLog(LogStreamInterface $stream): void
+    {
+        $customToLog = ['strlen(body)' => strlen($this->body)];
+        $this->toLogLoggableTraitImpl($stream, $customToLog);
     }
 }

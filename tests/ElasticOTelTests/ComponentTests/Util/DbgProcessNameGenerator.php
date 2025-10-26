@@ -23,10 +23,22 @@ declare(strict_types=1);
 
 namespace ElasticOTelTests\ComponentTests\Util;
 
-interface IsEnoughExportedDataInterface
+use Elastic\OTel\Util\StaticClassTrait;
+
+final class DbgProcessNameGenerator
 {
-    /**
-     * @param Span[] $spans
-     */
-    public function isEnough(array $spans): bool;
+    use StaticClassTrait;
+
+    /** @var array<string, positive-int> */
+    private static array $prefixToNextIndex = [];
+
+    public static function generate(string $prefix): string
+    {
+        if (!array_key_exists($prefix, self::$prefixToNextIndex)) {
+            self::$prefixToNextIndex[$prefix] = 1;
+        }
+        $index = self::$prefixToNextIndex[$prefix]++;
+
+        return $prefix . '_' . $index;
+    }
 }

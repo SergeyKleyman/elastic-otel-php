@@ -21,27 +21,30 @@
 
 declare(strict_types=1);
 
-namespace ElasticOTelTests\ComponentTests\Util;
+namespace ElasticOTelTests\ComponentTests\Util\OtlpData;
 
-use ElasticOTelTests\ComponentTests\Util\OtlpData\Span;
-use ElasticOTelTests\ComponentTests\Util\OtlpData\SpanKind;
+use ElasticOTelTests\Util\AssertEx;
+use Opentelemetry\Proto\Resource\V1\Resource as OTelProtoResource;
 
-final class SpanExpectations implements ExpectationsInterface
+/**
+ * @see https://github.com/open-telemetry/opentelemetry-proto/blob/v1.8.0/opentelemetry/proto/resource/v1/resource.proto#L28
+ */
+class OTelResource
 {
-    use ExpectationsTrait;
-
     /**
-     * @phpstan-param LeafExpectations<SpanKind> $kind
+     * @param non-negative-int $droppedAttributesCount
      */
     public function __construct(
-        public readonly StringExpectations $name,
-        public readonly LeafExpectations $kind,
-        public readonly AttributesExpectations $attributes,
+        public readonly Attributes $attributes,
+        public readonly int $droppedAttributesCount,
     ) {
     }
 
-    public function assertMatches(Span $actual): void
+    public static function deserializeFromOTelProto(OTelProtoResource $source): self
     {
-        $this->assertMatchesMixed($actual);
+        return new self(
+            attributes: Attributes::deserializeFromOTelProto($source->getAttributes()),
+            droppedAttributesCount: AssertEx::isNonNegativeInt($source->getDroppedAttributesCount()),
+        );
     }
 }
