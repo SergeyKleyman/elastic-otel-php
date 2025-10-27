@@ -193,7 +193,7 @@ abstract class HttpServerStarter
             $dbgProcessName . ' started',
             self::MAX_WAIT_SERVER_START_MICROSECONDS
         ))->run(
-            function () use ($port, $dataPerRequest, $logger, &$lastThrown, &$pid) {
+            function () use ($port, $dataPerRequest, $logger, &$lastThrown, &$pid): bool {
                 try {
                     $response = HttpClientUtilForTests::sendRequest(
                         HttpMethods::GET,

@@ -27,5 +27,10 @@ namespace ElasticOTelTools\Build;
 
 require __DIR__ . '/../../tests/bootstrap.php';
 
+/**
+ * @var string[] $argv
+ *
+ * @noinspection PhpRedundantVariableDocTypeInspection
+ */
 global $argv;
 ChecksumsForFiles::cmdLineGenerate($argv);

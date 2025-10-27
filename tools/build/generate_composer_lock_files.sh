@@ -236,6 +236,9 @@ main() {
         done
     done
 
+    php "${repo_root_dir}/tools/build/generateChecksumsForFiles.php" "${composer_lock_files_temp_dir}"
+    php "${repo_root_dir}/tools/build/verifyChecksumsForFiles.php" "${composer_lock_files_temp_dir}"
+
     echo "Deleting content of ${elastic_otel_php_build_tools_composer_lock_files_dir:?}/ ..."
     rm -rf "${elastic_otel_php_build_tools_composer_lock_files_dir:?}"/*
 

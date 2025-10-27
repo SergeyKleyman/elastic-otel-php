@@ -30,11 +30,6 @@ use ElasticOTelTests\Util\Log\LogCategoryForTests;
 use ElasticOTelTests\Util\Log\LoggableToString;
 use PHPUnit\Framework\Assert;
 
-/**
- * Code in this file is part of implementation internals, and thus it is not covered by the backward compatibility.
- *
- * @internal
- */
 final class FileUtil
 {
     use StaticClassTrait;
@@ -123,5 +118,17 @@ final class FileUtil
         && $loggerProxy->includeStackTrace()->log('Created a temporary file', compact('tempFileFullPath', 'dbgTempFilePurpose'));
 
         return $tempFileFullPath;
+    }
+
+    public static function putContents(string $fileFullPath, string $contentsToWrite): void
+    {
+        Assert::assertNotFalse($numberOfBytesWritten = file_put_contents($fileFullPath, $contentsToWrite));
+        Assert::assertSame(strlen($contentsToWrite), $numberOfBytesWritten);
+    }
+
+    public static function getContents(string $fileFullPath): string
+    {
+        Assert::assertNotFalse($contents = file_get_contents($fileFullPath));
+        return $contents;
     }
 }

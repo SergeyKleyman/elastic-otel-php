@@ -50,6 +50,9 @@ final class LoggableToJsonEncodable
     private const IS_DTO_OBJECT_CACHE_MAX_COUNT_LOW_WATER_MARK = 10000;
     private const IS_DTO_OBJECT_CACHE_MAX_COUNT_HIGH_WATER_MARK = 2 * self::IS_DTO_OBJECT_CACHE_MAX_COUNT_LOW_WATER_MARK;
 
+    public const MESSAGE_KEY = 'message';
+    public const DEBUG_CONTEXT_KEY = 'DebugContext';
+
     private const ELASTIC_NAMESPACE_PREFIXES = ['Elastic\\OTel\\', 'ElasticOTelTests\\'];
 
     /**
@@ -334,10 +337,10 @@ final class LoggableToJsonEncodable
             ];
 
             if (($extractedContextsStack = DebugContext::extractContextsStackFromMessage($message)) !== null) {
-                $result['DebugContext'] = self::convert($extractedContextsStack, $depth);
+                $result[self::DEBUG_CONTEXT_KEY] = self::convert($extractedContextsStack, $depth);
             }
 
-            $result['message'] = $message;
+            $result[self::MESSAGE_KEY] = $message;
 
             return $result;
         } catch (Throwable $throwable) {
