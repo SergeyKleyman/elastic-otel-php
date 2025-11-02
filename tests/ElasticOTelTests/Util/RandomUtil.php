@@ -75,9 +75,9 @@ final class RandomUtil
      *
      * @param array<T> $totalSet
      *
-     * @param int          $subSetSize
+     * @param non-negative-int $subSetSize
      *
-     * @return array<T>
+     * @return list<T>
      */
     public static function arrayRandValues(array $totalSet, int $subSetSize): array
     {

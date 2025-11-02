@@ -29,6 +29,9 @@ use Elastic\OTel\Util\TextUtil;
 use ElasticOTelTests\Util\Log\LogCategoryForTests;
 use ElasticOTelTests\Util\Log\LoggableToString;
 use PHPUnit\Framework\Assert;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 
 final class FileUtil
 {
@@ -130,5 +133,68 @@ final class FileUtil
     {
         Assert::assertNotFalse($contents = file_get_contents($fileFullPath));
         return $contents;
+    }
+
+    /**
+     * @param string $dirFullPath
+     *
+     * @return iterable<SplFileInfo>
+     */
+    public static function iterateOverFilesInDirectoryRecursively(string $dirFullPath): iterable
+    {
+        $dirIter = new RecursiveDirectoryIterator($dirFullPath);
+        /** @var SplFileInfo $fileInfo */
+        foreach (new RecursiveIteratorIterator($dirIter) as $fileInfo) {
+            Assert::assertInstanceOf(SplFileInfo::class, $fileInfo);
+            if ($fileInfo->isFile()) {
+                yield $fileInfo;
+            }
+        }
+    }
+
+    /**
+     * @param non-empty-string $itemPath
+     * @param non-empty-string $relativeToDir
+     *
+     * @return string
+     */
+    public static function relativePath(string $itemPath, string $relativeToDir): string
+    {
+        DebugContext::getCurrentScope(/* out */ $dbgCtx);
+        Assert::assertStringStartsWith($relativeToDir, $itemPath);
+        $posAfterDirPrefix = strlen($relativeToDir);
+        $dbgCtx->add(compact('posAfterDirPrefix'));
+        Assert::assertGreaterThan($posAfterDirPrefix, strlen($itemPath));
+        $posRelativeStart = $itemPath[$posAfterDirPrefix] === '/'  ? ($posAfterDirPrefix + 1) : $posAfterDirPrefix;
+        return substr($itemPath, $posRelativeStart);
+    }
+
+    /**
+     * @param non-empty-string $itemUnderFromDirFullPath
+     * @param non-empty-string $fromDirFullPath
+     * @param non-empty-string $toDirFullPath
+     *
+     * @return non-empty-string
+     */
+    public static function mapRelativePartOfPath(string $itemUnderFromDirFullPath, string $fromDirFullPath, string $toDirFullPath): string
+    {
+        return AssertEx::isNonEmptyString(FileUtil::listToPath([$toDirFullPath, self::relativePath($itemUnderFromDirFullPath, $fromDirFullPath)]));
+    }
+
+    public static function copyDirectoryContents(string $fromDirFullPath, string $toDirFullPath): void
+    {
+        DebugContext::getCurrentScope(/* out */ $dbgCtx);
+
+        $dbgCtx->pushSubScope();
+        foreach (FileUtil::iterateOverFilesInDirectoryRecursively($fromDirFullPath) as $fileInfo) {
+            $dbgCtx->resetTopSubScope(compact('fileInfo'));
+            if (!$fileInfo->isFile()) {
+                continue;
+            }
+            Assert::assertTrue(mkdir($fileInfo->getPath(), recursive: true));
+            $fromFileRealPath = AssertEx::isString($fileInfo->getRealPath());
+            Assert::assertTrue(copy($fromFileRealPath, self::mapRelativePartOfPath($fromFileRealPath, $fromDirFullPath, $toDirFullPath)));
+        }
+        $dbgCtx->popSubScope();
     }
 }

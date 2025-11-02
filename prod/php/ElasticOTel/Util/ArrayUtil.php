@@ -59,11 +59,29 @@ final class ArrayUtil
      * @phpstan-param array<TKey, TArrayValue> $array
      * @phpstan-param TFallbackValue           $fallbackValue
      *
-     * @return TArrayValue|TFallbackValue
+     * @phpstan-return TArrayValue|TFallbackValue
      */
     public static function getValueIfKeyExistsElse(string|int $key, array $array, mixed $fallbackValue): mixed
     {
         return array_key_exists($key, $array) ? $array[$key] : $fallbackValue;
+    }
+
+    /**
+     * @template TKey of array-key
+     * @template TArrayValue
+     *
+     * @phpstan-param TKey                     $key
+     * @phpstan-param array<TKey, TArrayValue> $array
+     * @phpstan-param TArrayValue              $initValue
+     *
+     * @phpstan-return TArrayValue
+     */
+    public static function getValueOrSetIfKeyDoesNotExist(string|int $key, array $array, mixed $initValue): mixed
+    {
+        if (!array_key_exists($key, $array)) {
+            $array[$key] = $initValue;
+        }
+        return $array[$key];
     }
 
     /**

@@ -36,7 +36,6 @@ final class DbAutoInstrumentationUtilForTests
     public const PASSWORD_KEY = 'PASSWORD';
 
     public const DB_NAME_KEY = 'db_name';
-    public const USE_SELECT_DB_KEY = 'use_select_db';
     public const WRAP_IN_TX_KEY = 'wrap_in_TX';
     public const SHOULD_ROLLBACK_KEY = 'should_rollback';
 

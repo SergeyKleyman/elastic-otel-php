@@ -36,8 +36,10 @@ use ElasticOTelTests\Util\JsonUtil;
 use ElasticOTelTests\Util\Log\LoggableToJsonEncodable;
 use ElasticOTelTests\Util\MixedMap;
 use ElasticOTelTests\Util\OsUtil;
+use ElasticOTelTests\Util\RandomUtil;
 use ElasticOTelTests\Util\RangeUtil;
 use ElasticOTelTests\Util\RepoRootDir;
+use ElasticOTelTools\Build\ChecksumsForFiles;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -49,19 +51,28 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
     private const WIDTH_KEY = 'width';
 
     /**
-     * @param positive-int $width
-     * @param non-negative-int $remainingDepth
+     * @param non-negative-int $width
+     * @param non-negative-int $currentDepth
+     * @param non-negative-int $depth
+     * @param array<non-negative-int, list<string>> $directories
+     * @param array<non-negative-int, list<string>> $createdFiles
      */
-    private static function createDummyFileSystemEntries(string $dirFullPath, int $width, int $remainingDepth): void
+    private static function createDummyFileSystemEntries(string $dirFullPath, int $width, int $depthIndex, int $depth, string $nameSuffix, array &$directories, array &$files): void
     {
-        foreach (RangeUtil::generateUpTo($width) as $widthIndex) {
-            $fileName = 'file_' . $widthIndex . '_' . $remainingDepth;
-            FileUtil::putContents(FileUtil::listToPath([$dirFullPath, $fileName]), $widthIndex === 0 ? '' : ('Contents of ' . $fileName));
+        ArrayUtil::getValueOrSetIfKeyDoesNotExist($depthIndex, $directories, []);
+        $directories[$depthIndex][] = $dirFullPath;
+        ArrayUtil::getValueOrSetIfKeyDoesNotExist($depthIndex, $files, []);
+        $filesForDepthIndex =& $files[$depthIndex];
 
-            $subDirFullPath = FileUtil::listToPath([$dirFullPath, 'dir_' . $widthIndex . '_' . $remainingDepth]);
-            Assert::assertTrue(mkdir($subDirFullPath));
-            if ($remainingDepth !== 0) {
-                self::createDummyFileSystemEntries($subDirFullPath, $width, $remainingDepth - 1);
+        foreach (RangeUtil::generateUpTo($width) as $widthIndex) {
+            $fileFullPath = FileUtil::listToPath([$dirFullPath, 'file_' . $widthIndex . '_' . $depthIndex . $nameSuffix]);
+            FileUtil::putContents($fileFullPath, $widthIndex === 0 ? '' : ('Contents of ' . $fileFullPath));
+            $filesForDepthIndex[] = $dirFullPath;
+
+            $subDirFullPath = FileUtil::listToPath([$dirFullPath, 'dir_' . $widthIndex . '_' . $depthIndex . $nameSuffix]);
+            Assert::assertTrue(mkdir($subDirFullPath, recursive: true));
+            if ($depthIndex !== $depth) {
+                self::createDummyFileSystemEntries($subDirFullPath, $width, $depthIndex + 1, $depth, $nameSuffix, $directories, $files);
             }
         }
     }
@@ -86,7 +97,7 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
         }
     }
 
-    private static function execCommand(string $command): void
+    private static function execCommand(string $command, bool $shouldExitWithSuccessCode = true): int
     {
         DebugContext::getCurrentScope(/* out */ $dbgCtx);
         $output = [];
@@ -97,13 +108,18 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
                 self::logThrowable($line);
             }
         }
-        self::assertSame(0, $exitCode);
+        if ($shouldExitWithSuccessCode) {
+            self::assertSame(0, $exitCode);
+        } else {
+            self::assertNotEquals(0, $exitCode);
+        }
+        return $exitCode;
     }
 
     /**
      * @param list<string> $argv
      */
-    private static function execScriptInToolsBuild(string $scriptName, array $argv): void
+    private static function execScriptInToolsBuild(string $scriptName, array $argv, int $expectedExitCode): void
     {
         DebugContext::getCurrentScope(/* out */ $dbgCtx);
         $scriptFullPath = RepoRootDir::adaptRelativeUnixStylePath('tools/build/' . $scriptName);
@@ -111,7 +127,8 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
         foreach ($argv as $arg) {
             $argsAsOneString .= "\"$arg\"";
         }
-        self::execCommand("php $scriptFullPath $argsAsOneString");
+        $exitCode = self::execCommand("php $scriptFullPath $argsAsOneString", shouldExitWithSuccessCode: $expectedExitCode === 0);
+        self::assertSame($expectedExitCode, $exitCode);
     }
 
     /**
@@ -122,8 +139,29 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
         return self::adaptDataProviderForTestBuilderToSmokeToDescToMixedMap(
             (new DataProviderForTestBuilder())
                 ->addKeyedDimensionAllValuesCombinable(self::DEPTH_KEY, [0, 1, 2])
-                ->addKeyedDimensionAllValuesCombinable(self::WIDTH_KEY, [1, 2, 10])
+                ->addKeyedDimensionAllValuesCombinable(self::WIDTH_KEY, [0, 1, 2, 5])
         );
+    }
+
+    private function ensureEmptyTempDirectory(string $dirFullPath): void
+    {
+        if (file_exists($dirFullPath)) {
+            self::assertStringStartsWith(sys_get_temp_dir() . '/', $dirFullPath);
+            self::assertDirectoryExists($dirFullPath);
+            self::execCommand("rm -rf \"$dirFullPath\"");
+        }
+        $pollingCheckResult = (new PollingCheck(
+            "directory `$dirFullPath' is not visible anymore after being deleted",
+            30 * 1000 * 1000, /* <- 30 seconds - maxWaitTimeInMicroseconds */
+        ))->run(
+            function () use ($dirFullPath): bool {
+                return !file_exists($dirFullPath);
+            },
+        );
+        self::assertTrue($pollingCheckResult);
+
+        self::assertTrue(mkdir($dirFullPath, recursive: true));
+        self::assertDirectoryExists($dirFullPath);
     }
 
     /**
@@ -138,31 +176,77 @@ final class ChecksumsForFilesTest extends ComponentTestCaseBase
         $loggerProxyDebug = $logger->ifDebugLevelEnabledNoLine(__FUNCTION__);
 
         $depth = AssertEx::isNonNegativeInt($testArgs->getInt(self::DEPTH_KEY));
-        $width = AssertEx::isPositiveInt($testArgs->getInt(self::WIDTH_KEY));
+        $width = AssertEx::isNonNegativeInt($testArgs->getInt(self::WIDTH_KEY));
 
         $rootDirFullPath = FileUtil::listToPath([sys_get_temp_dir(), ClassNameUtil::fqToShort(__CLASS__)]);
         $loggerProxyDebug && $loggerProxyDebug->log(__LINE__, '', compact('rootDirFullPath'));
-        if (file_exists($rootDirFullPath)) {
-            self::assertStringStartsWith(sys_get_temp_dir() . '/', $rootDirFullPath);
-            self::assertDirectoryExists($rootDirFullPath);
-            self::execCommand("rm -rf \"$rootDirFullPath\"");
-        }
-        $pollingCheckResult = (new PollingCheck(
-            "directory `$rootDirFullPath' is not visible anymore after being deleted",
-            30 * 1000 * 1000 /* <- 30 seconds - maxWaitTimeInMicroseconds */
-        ))->run(
-            function () use ($rootDirFullPath): bool {
-                return !file_exists($rootDirFullPath);
+        self::ensureEmptyTempDirectory($rootDirFullPath);
+        $stageDirFullPath = FileUtil::listToPath([$rootDirFullPath, 'stage']);
+        self::assertTrue(mkdir($stageDirFullPath));
+        $backupDirFullPath = FileUtil::listToPath([$rootDirFullPath, 'backup']);
+        self::assertTrue(mkdir($backupDirFullPath));
+
+        $createdDirectories = [];
+        $createdFiles = [];
+        self::createDummyFileSystemEntries($stageDirFullPath, $width, $depth, /* nameSuffix: */ '', /* out */ $createdDirectories, /* ref */ $createdFiles);
+        FileUtil::copyDirectoryContents($stageDirFullPath, $backupDirFullPath);
+
+        self::execScriptInToolsBuild('generateChecksumsForFiles.php', [$stageDirFullPath], expectedExitCode: 0);
+        $verifyChecksumsForFilesInStageDir = function (bool $expectedToSucceed) use ($stageDirFullPath): void {
+            self::execScriptInToolsBuild('verifyChecksumsForFiles.php', [$stageDirFullPath], expectedExitCode: $expectedToSucceed? 0 : ChecksumsForFiles::FAILURE_EXIT_CODE);
+        };
+        $verifyChecksumsForFilesInStageDir(expectedToSucceed: true);
+
+        /**
+         * @param list<string> $filesUnderStageDir
+         */
+        $restoreFilesFromBackup = function (array $filesUnderStageDir) use ($stageDirFullPath, $backupDirFullPath): void {
+            foreach ($filesUnderStageDir as $fileUnderStageDir) {
+                $fileUnderBackupDir = FileUtil::mapRelativePartOfPath($fileUnderStageDir, $stageDirFullPath, $backupDirFullPath);
+                Assert::assertTrue(copy($fileUnderBackupDir, $fileUnderStageDir));
             }
-        );
-        self::assertTrue($pollingCheckResult);
+        };
 
-        self::assertTrue(mkdir($rootDirFullPath, recursive: true));
-        self::assertDirectoryExists($rootDirFullPath);
+        // Test changes to files: change file contents, rename, delete
+        foreach (RangeUtil::generateUpTo(max(3, count($createdFiles))) as $fileCount) {
+            $selectedFiles = RandomUtil::arrayRandValues($createdFiles, $fileCount);
 
-        self::createDummyFileSystemEntries($rootDirFullPath, $width, $depth);
+            // Test file contents being changed
+            foreach ($selectedFiles as $fileFullPath) {
+                FileUtil::putContents($fileFullPath, 'Changed contents of ' . $fileFullPath);
+            }
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: false);
+            $restoreFilesFromBackup($selectedFiles);
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: true);
 
-        self::execScriptInToolsBuild('generateChecksumsForFiles.php', [$rootDirFullPath]);
-        self::execScriptInToolsBuild('verifyChecksumsForFiles.php', [$rootDirFullPath]);
+            // Test file renamed
+            $selectedFilesRenamed = [];
+            foreach ($selectedFiles as $fileFullPath) {
+                $fileRenamedFullPath = $fileFullPath . '_renamed';
+                Assert::assertTrue(rename($fileFullPath, $fileRenamedFullPath));
+                $selectedFilesRenamed[] = $fileRenamedFullPath;
+            }
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: false);
+            foreach ($selectedFilesRenamed as $fileRenamedFullPath) {
+                Assert::assertTrue(unlink($fileRenamedFullPath));
+            }
+            $restoreFilesFromBackup($selectedFiles);
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: true);
+
+            // Test file deleted
+            foreach ($selectedFiles as $fileFullPath) {
+                Assert::assertTrue(unlink($fileFullPath));
+            }
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: false);
+            $restoreFilesFromBackup($selectedFiles);
+            $verifyChecksumsForFilesInStageDir(expectedToSucceed: true);
+        }
+
+        // Test adding file(s)
+        foreach (RangeUtil::generateUpTo(3) as $fileToAddCount) {
+            foreach (RangeUtil::generateUpTo($depth) as $) {
+
+            }
+        }
     }
 }

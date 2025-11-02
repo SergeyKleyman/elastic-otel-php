@@ -36,9 +36,6 @@ use ElasticOTelTests\Util\Log\LoggableToString;
 use ElasticOTelTests\Util\Log\Logger;
 use ElasticOTelTests\Util\Log\SinkForTests as LogSinkForTests;
 use PHPUnit\Framework\Assert;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
 use Throwable;
 
 final class ChecksumsForFiles
@@ -46,6 +43,7 @@ final class ChecksumsForFiles
     private const JSON_FILE_NAME = 'checksums_for_generated_files.json';
     private const JSON_CRC32_FILE_NAME = 'checksums_for_generated_files.json.crc32';
     private const DOT_GIT_ATTRIBUTES_FILE_NAME = '.gitattributes';
+    public const FAILURE_EXIT_CODE = 1;
 
     /**
      * @param string[] $argv
@@ -84,7 +82,7 @@ final class ChecksumsForFiles
             $impl();
         } catch (Throwable $throwable) {
             LogSinkForTests::writeLineToStdErr('Caught throwable: ' . LoggableToString::convert($throwable));
-            exit(1);
+            exit(self::FAILURE_EXIT_CODE);
         }
     }
 
@@ -131,30 +129,9 @@ final class ChecksumsForFiles
         self::verifyDotGitAttributesFile($rootDirFullPath);
     }
 
-    private static function adaptPath(string $fullPath): string
+    public static function adaptPath(string $fullPath): string
     {
         return FileUtil::adaptUnixDirectorySeparators(FileUtil::normalizePath($fullPath));
-    }
-
-    /**
-     * @param non-empty-string $itemPath
-     * @param non-empty-string $relativeToDir
-     *
-     * @return non-empty-string
-     */
-    private static function deriveRelativePath(string $itemPath, string $relativeToDir): string
-    {
-        DebugContext::getCurrentScope(/* out */ $dbgCtx);
-        Assert::assertStringStartsWith($relativeToDir, $itemPath);
-        $posAfterDirPrefix = strlen($relativeToDir);
-        $dbgCtx->add(compact('posAfterDirPrefix'));
-        Assert::assertGreaterThan($posAfterDirPrefix, strlen($itemPath));
-
-        if (strlen($relativeToDir) > 1) {
-            Assert::assertSame('/', $itemPath[$posAfterDirPrefix]);
-        }
-
-        return AssertEx::isNonEmptyString(substr($itemPath, $posAfterDirPrefix + 1));
     }
 
     private static function shouldGenerateChecksumForFile(string $fileRelativePath): bool
@@ -176,17 +153,15 @@ final class ChecksumsForFiles
         $rootDirAdaptedPath = AssertEx::isNonEmptyString(self::adaptPath($rootDirFullPath));
         $loggerProxyDebug && $loggerProxyDebug->includeStackTrace()->log(__LINE__, '', compact('rootDirAdaptedPath'));
         $dbgCtx->add(compact('rootDirAdaptedPath'));
-        $dirIter = new RecursiveDirectoryIterator($rootDirFullPath);
+
         $dbgCtx->pushSubScope();
-        /** @var SplFileInfo $fileInfo */
-        foreach (new RecursiveIteratorIterator($dirIter) as $fileInfo) {
+        foreach (FileUtil::iterateOverFilesInDirectoryRecursively($rootDirFullPath) as $fileInfo) {
+            $dbgCtx->resetTopSubScope(compact('fileInfo'));
             if (!$fileInfo->isFile()) {
                 continue;
             }
-            Assert::assertInstanceOf(SplFileInfo::class, $fileInfo);
-            $dbgCtx->resetTopSubScope(compact('fileInfo'));
             $loggerProxyDebug && $loggerProxyDebug->log(__LINE__, '', ['fileInfo->getRealPath' => $fileInfo->getRealPath()]);
-            $fileRelativePath = self::deriveRelativePath(AssertEx::isNonEmptyString(self::adaptPath($fileInfo->getRealPath())), $rootDirAdaptedPath);
+            $fileRelativePath = FileUtil::relativePath(AssertEx::isNonEmptyString(self::adaptPath($fileInfo->getRealPath())), $rootDirAdaptedPath);
             $loggerProxyDebug && $loggerProxyDebug->log(__LINE__, '', compact('fileRelativePath'));
             if (!self::shouldGenerateChecksumForFile($fileRelativePath)) {
                 continue;
