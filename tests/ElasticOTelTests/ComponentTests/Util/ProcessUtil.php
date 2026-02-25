@@ -189,19 +189,6 @@ final class ProcessUtil
     }
 
     /**
-     * @param PidList $rootsPids
-     * @param PidToParentPid $pidToParentPid
-     *
-     * @return PidList
-     */
-    private static function removeDescendantRoots(array $rootsPids, array $pidToParentPid): array
-    {
-        while (true) {
-
-        }
-    }
-
-    /**
      * @param PidToParentPid $pidToParentPid
      *
      * @return PidToPidList
@@ -213,22 +200,6 @@ final class ProcessUtil
             $children = ArrayUtil::getValueIfKeyExistsElse($parentPid, $pidToParentPid, []);
             $children[] = $pid;
             $result[$parentPid] = $children;
-        }
-        return $result;
-    }
-
-    /**
-     * @param PidToPidList $pidToChildrenPids
-     *
-     * @return PidList
-     */
-    private static function getToDescendantPids(int $rootPid, array $pidToChildrenPids): array
-    {
-        $result = ArrayUtil::getValueIfKeyExistsElse($rootPid, $pidToChildrenPids, fallbackValue: []);
-        $nextIndexToProcess = 0;
-        while (($nextIndexToProcess + 1) < count($result)) {
-            $currentPid = $result[$nextIndexToProcess++];
-            ArrayUtilForTests::append(ArrayUtil::getValueIfKeyExistsElse($currentPid, $pidToChildrenPids, fallbackValue: []), /* ref */ $result);
         }
         return $result;
     }
