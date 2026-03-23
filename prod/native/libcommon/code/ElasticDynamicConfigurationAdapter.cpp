@@ -55,11 +55,16 @@ std::unordered_map<std::string, std::string> ElasticDynamicConfigurationAdapter:
 
 void ElasticDynamicConfigurationAdapter::update(configFiles_t const &files) {
     auto elasticConfig = files.find("elastic"s);
-    if (elasticConfig == std::end(files)) {
+    if (elasticConfig == std::end(files) || elasticConfig->second.empty()) {
         options_.clear();
+        return;
     }
 
-    options_ = remapOptions(parseJsonConfigFile(elasticConfig->second));
+    try {
+        options_ = remapOptions(parseJsonConfigFile(elasticConfig->second));
+    } catch (std::exception const &e) {
+        ELOG_WARNING(logger_, CONFIG, "Failed to parse elastic dynamic configuration file: {}", e.what());
+    }
 }
 
 ElasticDynamicConfigurationAdapter::optionsMap_t ElasticDynamicConfigurationAdapter::remapOptions(optionsMap_t remoteOptions) const {
@@ -86,6 +91,7 @@ ElasticDynamicConfigurationAdapter::optionsMap_t ElasticDynamicConfigurationAdap
             }
 
             result[EL_STRINGIFY(ELASTIC_OTEL_LOG_LEVEL)] = loglevel;
+            ELOG_DEBUG(logger_, CONFIG, "ElasticDynamicConfigurationAdapter remapOptions Mapped remote 'logging_level->{}' to '{}->{}'.", opt.second, EL_STRINGIFY(ELASTIC_OTEL_LOG_LEVEL), loglevel);
         }
 
         if (opt.first == "infer_spans") {
@@ -94,6 +100,7 @@ ElasticDynamicConfigurationAdapter::optionsMap_t ElasticDynamicConfigurationAdap
             } else if (opt.second == "false"s) {
                 result[EL_STRINGIFY(ELASTIC_OTEL_INFERRED_SPANS_ENABLED)] = "false"s;
             }
+            ELOG_DEBUG(logger_, CONFIG, "ElasticDynamicConfigurationAdapter remapOptions Mapped remote 'infer_spans->{}' to '{}->{}'.", opt.second, EL_STRINGIFY(ELASTIC_OTEL_INFERRED_SPANS_ENABLED), result[EL_STRINGIFY(ELASTIC_OTEL_INFERRED_SPANS_ENABLED)]);
         }
     }
 

@@ -36,6 +36,8 @@
 #include "SigSegvHandler.h"
 #include "os/OsUtils.h"
 #include "transport/OpAmp.h"
+#include "coordinator/CoordinatorProcess.h"
+#include "ElasticDynamicConfigurationAdapter.h"
 
 #include <curl/curl.h>
 #include <inttypes.h> // PRIu64
@@ -89,6 +91,20 @@ void elasticApmModuleInit(int moduleType, int moduleNumber) {
         return;
     }
 
+    if (globals->coordinatorProcess_->start()) {
+        delete globals;
+        std::exit(0);
+    }
+
+    // add config update watcher in worker process
+    globals->coordinatorConfigProvider_->addConfigUpdateWatcher([globals, elasticDynamicCfg = globals->elasticDynamicConfig_](elasticapm::php::coordinator::CoordinatorConfigurationProvider::configFiles_t const &cfgFiles) {
+        ELOG_DEBUG(globals->logger_, COORDINATOR, "Received config update with {} files. Updating dynamic config and global config storage", cfgFiles.size());
+        elasticDynamicCfg->update(cfgFiles);
+        configManager.update(cfgFiles);
+    });
+
+    globals->coordinatorConfigProvider_->triggerUpdateIfChanged();
+
     ELOGF_DEBUG(globals->logger_, MODULE, "MINIT Replacing hooks");
     elasticapm::php::Hooking::getInstance().fetchOriginalHooks();
     elasticapm::php::Hooking::getInstance().replaceHooks(globals->config_->get().inferred_spans_enabled, globals->config_->get().dependency_autoloader_guard_enabled);
@@ -104,7 +120,8 @@ void elasticApmModuleInit(int moduleType, int moduleNumber) {
         ELOGF_WARNING(globals->logger_, MODULE, "The ELASTIC_OTEL_VERIFY_SERVER_CERT environment variable is deprecated. Please use OTEL_EXPORTER_OTLP_INSECURE instead. Read more details here https://www.elastic.co/docs/release-notes/edot/sdks/php/breaking-changes");
     }
 
-    globals->opAmp_->init();
+    // Registering fork handlers in module init to ensure that we will handle all forks properly - even those triggered before request start (e.g. in MINIT of other extensions) or when fpm/apache spawns worker processes. We cannot be sure that some of the classes implementing ForkableInterface will not start thread before request start.
+    registerCallbacksToHandleFork();
 }
 
 void elasticApmModuleShutdown( int moduleType, int moduleNumber ) {

@@ -139,7 +139,6 @@ main() {
         exit 1
     fi
 
-    cat /dev/null > "${work_repo_root_dir}/NOTICE"
     GEN_NOTICE=""
     if [ "$SKIP_NOTICE" = true ]; then
         echo "Skipping notice file generation..."

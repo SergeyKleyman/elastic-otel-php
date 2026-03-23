@@ -1,3 +1,5 @@
+<?php
+
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
  * or more contributor license agreements. See the NOTICE file distributed with
@@ -17,6 +19,28 @@
  * under the License.
  */
 
-#pragma once
+declare(strict_types=1);
 
-void registerCallbacksToHandleFork();
+namespace ElasticOTelTests\UnitTests;
+
+use Elastic\OTel\RemoteConfigHandler;
+use ElasticOTelTests\Util\TestCaseBase;
+
+final class RemoteConfigUnitTest extends TestCaseBase
+{
+    public function testMergeDisabledInstrumentations(): void
+    {
+        $impl = function (string $localVal, string $remoteVal, string $expectedMergedVal): void {
+            $actualMergedVal = RemoteConfigHandler::mergeDisabledInstrumentations($localVal, $remoteVal);
+            self::assertSame($expectedMergedVal, $actualMergedVal);
+        };
+
+        $impl('', '', '');
+        $impl("\t", " \n ", '');
+        $impl('a', '', 'a');
+        $impl('', 'b', 'b');
+        $impl('a', 'b', 'a,b');
+        $impl('1,b', 'c,4', '1,b,c,4');
+        $impl("1\n, b", "\t c, 4", '1,b,c,4');
+    }
+}
